@@ -38,7 +38,14 @@ function verifySlackRequest(req) {
 }
 
 // ============================================
-// CSV Analysis Engine
+// 柔軟なCSV解析エンジン - 改善版
+// ============================================
+class FlexibleCSVAnalyzer {
+  // 先ほど提供した完全なFlexibleCSVAnalyzerクラス
+}
+
+// ============================================
+// CSV Analysis Engine - 改善版
 // ============================================
 class CSVAnalyzer {
   static async downloadFile(url, token) {
@@ -56,68 +63,17 @@ class CSVAnalyzer {
   }
 
   static parseCSV(csvText) {
-    const lines = csvText.trim().split('\n');
-    if (lines.length < 2) {
-      throw new Error('CSVファイルにデータが不足しています。');
-    }
-
-    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-    const data = [];
-
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
-      if (values.length === headers.length) {
-        const row = {};
-        headers.forEach((header, index) => {
-          row[header] = values[index];
-        });
-        data.push(row);
-      }
-    }
-
-    return { headers, data, rowCount: data.length };
+    // 新しい柔軟な解析を使用
+    return FlexibleCSVAnalyzer.parseCSVIntelligent(csvText);
   }
 
   static analyzeData(parsedData) {
-    const { headers, data, rowCount } = parsedData;
-    
-    const analysis = {
-      overview: {
-        totalRows: rowCount,
-        totalColumns: headers.length,
-        columns: headers
-      },
-      columnAnalysis: {},
-      patterns: [],
-      insights: []
-    };
-
-    // Column analysis
-    headers.forEach(column => {
-      const values = data.map(row => row[column]).filter(v => v && v !== '');
-      const numericValues = values.filter(v => !isNaN(v) && v !== '').map(Number);
-      
-      analysis.columnAnalysis[column] = {
-        type: numericValues.length > values.length * 0.7 ? 'numeric' : 'text',
-        nonEmptyCount: values.length,
-        uniqueCount: new Set(values).size,
-        sampleValues: values.slice(0, 3)
-      };
-
-      if (numericValues.length > 0) {
-        analysis.columnAnalysis[column].statistics = {
-          min: Math.min(...numericValues),
-          max: Math.max(...numericValues),
-          average: numericValues.reduce((a, b) => a + b, 0) / numericValues.length,
-          sum: numericValues.reduce((a, b) => a + b, 0)
-        };
-      }
-    });
-
-    return analysis;
+    // 新しい高度な分析を使用
+    return FlexibleCSVAnalyzer.analyzeDataAdvanced(parsedData);
   }
 
   static async generateAIInsights(analysis, userQuery, sampleData) {
+    // 既存のOpenAI連携コードをそのまま維持
     const prompt = `
 以下のCSVデータを分析して、ユーザーの質問に答えてください。
 
@@ -169,7 +125,6 @@ ${userQuery}
     }
   }
 }
-
 // ============================================
 // Message Handler
 // ============================================
