@@ -40,8 +40,382 @@ function verifySlackRequest(req) {
 // ============================================
 // 柔軟なCSV解析エンジン - 改善版
 // ============================================
+// ============================================
+// 柔軟なCSV解析エンジン - 改善版
+// ============================================
 class FlexibleCSVAnalyzer {
-  // 先ほど提供した完全なFlexibleCSVAnalyzerクラス
+  
+  // ============================================
+  // インテリジェントCSV解析
+  // ============================================
+  static parseCSVIntelligent(csvText) {
+    console.log('=== Intelligent CSV Parsing Started ===');
+    
+    // 1. 区切り文字の自動検出
+    const delimiter = this.detectDelimiter(csvText);
+    console.log('Detected delimiter:', delimiter);
+    
+    // 2. エンコーディング問題の修正
+    const cleanedText = this.cleanCSVText(csvText);
+    
+    // 3. 行の分割と前処理
+    const lines = this.splitLines(cleanedText);
+    console.log('Total lines:', lines.length);
+    
+    // 4. ヘッダー行の検出
+    const headerInfo = this.detectHeaders(lines, delimiter);
+    console.log('Header info:', headerInfo);
+    
+    // 5. データ行の解析
+    const parsedData = this.parseDataRows(lines, headerInfo, delimiter);
+    
+    return {
+      headers: headerInfo.headers,
+      data: parsedData,
+      rowCount: parsedData.length,
+      delimiter: delimiter,
+      headerRowIndex: headerInfo.rowIndex,
+      metadata: {
+        totalLines: lines.length,
+        emptyLines: lines.filter(line => !line.trim()).length,
+        dataQuality: this.assessDataQuality(parsedData)
+      }
+    };
+  }
+
+  // ============================================
+  // 区切り文字の自動検出
+  // ============================================
+  static detectDelimiter(csvText) {
+    const delimiters = [',', ';', '\t', '|'];
+    const sampleLines = csvText.split('\n').slice(0, 5); // 最初の5行をサンプル
+    
+    let bestDelimiter = ',';
+    let maxConsistency = 0;
+    
+    for (const delimiter of delimiters) {
+      const columnCounts = sampleLines
+        .filter(line => line.trim())
+        .map(line => this.splitCSVLine(line, delimiter).length);
+      
+      if (columnCounts.length > 0) {
+        // 各行の列数の一貫性をチェック
+        const mode = this.findMode(columnCounts);
+        const consistency = columnCounts.filter(count => count === mode).length / columnCounts.length;
+        
+        if (consistency > maxConsistency && mode > 1) {
+          maxConsistency = consistency;
+          bestDelimiter = delimiter;
+        }
+      }
+    }
+    
+    return bestDelimiter;
+  }
+
+  // ============================================
+  // CSV行の適切な分割（引用符対応）
+  // ============================================
+  static splitCSVLine(line, delimiter = ',') {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    let quoteChar = null;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const nextChar = line[i + 1];
+      
+      if ((char === '"' || char === "'") && !inQuotes) {
+        inQuotes = true;
+        quoteChar = char;
+      } else if (char === quoteChar && inQuotes) {
+        if (nextChar === quoteChar) {
+          // エスケープされた引用符
+          current += char;
+          i++; // 次の文字をスキップ
+        } else {
+          inQuotes = false;
+          quoteChar = null;
+        }
+      } else if (char === delimiter && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    
+    result.push(current.trim());
+    return result;
+  }
+
+  // ============================================
+  // テキストのクリーニング
+  // ============================================
+  static cleanCSVText(csvText) {
+    return csvText
+      .replace(/\r\n/g, '\n')  // Windows改行を統一
+      .replace(/\r/g, '\n')    // Mac改行を統一
+      .replace(/^\uFEFF/, '')  // BOM削除
+      .trim();
+  }
+
+  // ============================================
+  // 行の分割と空行除去
+  // ============================================
+  static splitLines(csvText) {
+    return csvText
+      .split('\n')
+      .map(line => line.trim())
+      .filter((line, index) => {
+        // 完全に空の行は除去
+        if (!line) return false;
+        
+        // コメント行の除去（#で始まる行）
+        if (line.startsWith('#')) return false;
+        
+        return true;
+      });
+  }
+
+  // ============================================
+  // ヘッダー行の検出
+  // ============================================
+  static detectHeaders(lines, delimiter) {
+    let bestHeaderRow = 0;
+    let bestHeaders = [];
+    let maxScore = 0;
+    
+    // 最初の5行以内でヘッダーを探す
+    for (let i = 0; i < Math.min(5, lines.length); i++) {
+      const columns = this.splitCSVLine(lines[i], delimiter);
+      const score = this.scoreHeaderRow(columns, lines.slice(i + 1), delimiter);
+      
+      if (score > maxScore) {
+        maxScore = score;
+        bestHeaderRow = i;
+        bestHeaders = columns;
+      }
+    }
+    
+    return {
+      rowIndex: bestHeaderRow,
+      headers: bestHeaders.map(header => this.cleanHeader(header))
+    };
+  }
+
+  // ============================================
+  // ヘッダー行のスコアリング
+  // ============================================
+  static scoreHeaderRow(columns, dataLines, delimiter) {
+    let score = 0;
+    
+    // 1. 列数の一貫性
+    const sampleDataRows = dataLines.slice(0, 10);
+    const columnCounts = sampleDataRows.map(line => this.splitCSVLine(line, delimiter).length);
+    const consistency = columnCounts.filter(count => count === columns.length).length / Math.max(columnCounts.length, 1);
+    score += consistency * 50;
+    
+    // 2. ヘッダーの品質
+    for (const column of columns) {
+      if (column && column.trim()) {
+        // 文字が含まれている
+        score += 10;
+        
+        // 数値でない（ヘッダーらしい）
+        if (isNaN(column.replace(/[^0-9.-]/g, ''))) {
+          score += 5;
+        }
+        
+        // 一般的なヘッダー語句
+        const headerKeywords = ['name', 'date', 'id', '名前', '日付', '金額', 'amount', 'price', '売上', '利益'];
+        if (headerKeywords.some(keyword => column.toLowerCase().includes(keyword))) {
+          score += 15;
+        }
+      }
+    }
+    
+    return score;
+  }
+
+  // ============================================
+  // ヘッダーのクリーニング
+  // ============================================
+  static cleanHeader(header) {
+    return header
+      .replace(/["\'\`]/g, '')  // 引用符削除
+      .replace(/[^\w\s\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/g, '_')  // 特殊文字を_に
+      .trim()
+      .replace(/\s+/g, '_')     // スペースを_に
+      || 'Column_' + Math.random().toString(36).substr(2, 5);  // 空の場合はランダム名
+  }
+
+  // ============================================
+  // データ行の解析
+  // ============================================
+  static parseDataRows(lines, headerInfo, delimiter) {
+    const headers = headerInfo.headers;
+    const data = [];
+    
+    // ヘッダー行以降をデータとして処理
+    for (let i = headerInfo.rowIndex + 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line.trim()) continue;
+      
+      const values = this.splitCSVLine(line, delimiter);
+      
+      // 列数が合わない場合の対処
+      if (values.length !== headers.length) {
+        console.log(`Row ${i}: Column count mismatch. Expected ${headers.length}, got ${values.length}`);
+        
+        // 少ない場合は空文字で埋める
+        while (values.length < headers.length) {
+          values.push('');
+        }
+        
+        // 多い場合は切り捨て
+        if (values.length > headers.length) {
+          values.splice(headers.length);
+        }
+      }
+      
+      const row = {};
+      headers.forEach((header, index) => {
+        let value = values[index] || '';
+        
+        // データの型推定と変換
+        value = this.convertValue(value);
+        row[header] = value;
+      });
+      
+      data.push(row);
+    }
+    
+    return data;
+  }
+
+  // ============================================
+  // 値の型変換
+  // ============================================
+  static convertValue(value) {
+    if (!value || value.trim() === '') return null;
+    
+    const trimmed = value.trim();
+    
+    // 数値の変換
+    if (/^-?\d{1,3}(,\d{3})*(\.\d+)?$/.test(trimmed)) {
+      // カンマ区切りの数値
+      return parseFloat(trimmed.replace(/,/g, ''));
+    }
+    
+    if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+      // 普通の数値
+      return parseFloat(trimmed);
+    }
+    
+    return trimmed;
+  }
+
+  // ============================================
+  // データ品質の評価
+  // ============================================
+  static assessDataQuality(data) {
+    if (!data || data.length === 0) {
+      return { score: 0, issues: ['No data rows found'] };
+    }
+    
+    const issues = [];
+    let score = 100;
+    
+    // 空のセルの割合
+    let totalCells = 0;
+    let emptyCells = 0;
+    
+    data.forEach(row => {
+      Object.values(row).forEach(value => {
+        totalCells++;
+        if (value === null || value === '') {
+          emptyCells++;
+        }
+      });
+    });
+    
+    const emptyRatio = emptyCells / totalCells;
+    if (emptyRatio > 0.3) {
+      issues.push(`High empty cell ratio: ${(emptyRatio * 100).toFixed(1)}%`);
+      score -= 30;
+    }
+    
+    return {
+      score: Math.max(0, score),
+      issues: issues
+    };
+  }
+
+  // ============================================
+  // ユーティリティ関数
+  // ============================================
+  static findMode(arr) {
+    const frequency = {};
+    let maxCount = 0;
+    let mode = arr[0];
+    
+    for (const num of arr) {
+      frequency[num] = (frequency[num] || 0) + 1;
+      if (frequency[num] > maxCount) {
+        maxCount = frequency[num];
+        mode = num;
+      }
+    }
+    
+    return mode;
+  }
+
+  // ============================================
+  // 高度な分析機能
+  // ============================================
+  static analyzeDataAdvanced(parsedData) {
+    const { headers, data, metadata } = parsedData;
+    
+    const analysis = {
+      overview: {
+        totalRows: data.length,
+        totalColumns: headers.length,
+        columns: headers,
+        dataQuality: metadata.dataQuality
+      },
+      columnAnalysis: {},
+      patterns: [],
+      insights: []
+    };
+
+    // より詳細な列分析
+    headers.forEach(column => {
+      const values = data.map(row => row[column]).filter(v => v !== null && v !== '');
+      const numericValues = values.filter(v => typeof v === 'number');
+      
+      const columnStats = {
+        type: numericValues.length > values.length * 0.7 ? 'numeric' : 'text',
+        nonEmptyCount: values.length,
+        uniqueCount: new Set(values).size,
+        sampleValues: values.slice(0, 5)
+      };
+
+      if (numericValues.length > 0) {
+        columnStats.statistics = {
+          min: Math.min(...numericValues),
+          max: Math.max(...numericValues),
+          average: numericValues.reduce((a, b) => a + b, 0) / numericValues.length,
+          sum: numericValues.reduce((a, b) => a + b, 0)
+        };
+      }
+
+      analysis.columnAnalysis[column] = columnStats;
+    });
+
+    return analysis;
+  }
 }
 
 // ============================================
