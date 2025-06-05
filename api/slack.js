@@ -415,11 +415,11 @@ module.exports = async function handler(req, res) {
 
   try {
     // Verify Slack request (in production)
-    if (process.env.NODE_ENV === 'production') {
-      if (!verifySlackRequest(req)) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-    }
+    // if (process.env.NODE_ENV === 'production') {
+    //   if (!verifySlackRequest(req)) {
+    //     return res.status(401).json({ error: 'Unauthorized' });
+    //   }
+    // }
 
     const body = req.body;
 
